@@ -1,6 +1,10 @@
+// TODO: Add options for verbose, and mode selection (Just finding a text string ie. grep from
+// files, Finding and replacing a text string from files, Finding and replacing a text string from
+// files copied to another directory)
 extern crate walkdir;
 
 use regex::Regex;
+use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -13,6 +17,11 @@ fn get_absolute_path(name: &str) -> String {
         name,
     ]
     .join("\\");
+}
+
+// check if file is a text file
+fn check_extension(file_ext: &OsStr, ext_list: &[&OsStr]) -> bool {
+    ext_list.iter().any(|&e| e == file_ext)
 }
 
 // Returns an Iterator to the Reader of the lines of the file.
@@ -71,7 +80,7 @@ fn check_dir(dest: &String) {
                 process::exit(1);
             }
             "y" | "" => {
-                println!("Creating Directory: {}", dest);
+                println!("Creating Directory: {}\n", dest);
                 fs::create_dir_all(dest).expect("Failed to create parent directory");
                 return;
             }
@@ -106,11 +115,13 @@ fn main() {
         query, src, repl, dest
     );
 
+    // Initializations
     let src_path = get_absolute_path(&src);
     let dest_path = get_absolute_path(&dest);
     let regex_query = Regex::new(&query).unwrap();
     let mut matched_files: Vec<PathBuf> = vec![];
     let mut modified_lines: Vec<String> = vec![];
+    let extensions = [OsStr::new("md"), OsStr::new("txt")];
 
     println!("Checking Files:");
     // grep search through all the files in src_path
@@ -119,8 +130,9 @@ fn main() {
         .filter_map(|file| file.ok())
     {
         // read file; search for query
-        if file.metadata().unwrap().is_file() {
-            print!("{:>50} \t ... \t ", &file.file_name().to_str().unwrap());
+        let file_ext = file.path().extension().unwrap_or(OsStr::new("garbage"));
+        if file.file_type().is_file() && check_extension(file_ext, &extensions) {
+            // print!("{:>50} \t ... \t ", &file.file_name().to_str().unwrap());
             let mut temp_str = String::new();
             if let Ok(lines) = read_lines(file.path()) {
                 for line in lines.map_while(Result::ok) {
@@ -128,18 +140,23 @@ fn main() {
                     temp_str.push('\n');
                 }
                 if regex_query.is_match(&temp_str) {
-                    println!(" Match Found! \t ... \t File Processed!");
+                    // println!(" Match Found! \t ... \t File Processed!");
+                    println!(
+                        "{:>50} \t Match Found!",
+                        &file.file_name().to_str().unwrap()
+                    );
                     matched_files.push(file.path().to_path_buf());
                     let modi_line = regex_query.replace(&temp_str, &repl);
                     modified_lines.push(modi_line.to_string());
                 } else {
-                    println!(" No Match Found!");
+                    // println!(" No Match Found!");
                 }
             }
         }
     }
 
     // copy files src to dest folder
+    println!("");
     for (i, file) in matched_files.iter().enumerate() {
         let content = &modified_lines[i];
 
@@ -154,7 +171,7 @@ fn main() {
         if !Path::new(&dest).exists() {
             check_dir(&dest_path);
         }
-        println!("\nCopying files to {}:", &dest_path);
+        println!("Copying files to {}\\{}:", &dest_path, &file_name);
 
         // skip file if already exists at location
         if Path::new(&dest_file_path).exists() {
